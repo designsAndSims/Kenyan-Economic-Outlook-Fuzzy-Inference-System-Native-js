@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kenyan Economy Crisis FIS</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+        input[type="range"] {
+            width: 300px;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        #plot {
+            width: 600px;
+            height: 400px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Kenyan Economy Crisis Risk Model</h1>
+    <label for="default-slider">Default Risk (0 to 1):</label>
+    <input type="range" id="default-slider" min="0" max="1" step="0.01" value="0.5"><br>
+    <label for="growth-slider">Economic Growth (-5% to 5%):</label>
+    <input type="range" id="growth-slider" min="-5" max="5" step="0.1" value="0"><br>
+    <div id="result">Crisis Risk: 0.50</div>
+    <div id="plot"></div>
+
+    <script>
+        // Gaussian membership function: μ(x) = exp(-((x - c)^2)/(2*σ^2))
+        function gaussian(x, c, sigma) {
+            return Math.exp(-Math.pow(x - c, 2) / (2 * Math.pow(sigma, 2)));
+        }
+
+        // Membership functions for inputs
+        const defaultLow = x => gaussian(x, 0, 0.2);    // Center at 0, σ = 0.2
+        const defaultHigh = x => gaussian(x, 1, 0.2);   // Center at 1, σ = 0.2
+        const growthNegative = x => gaussian(x, -5, 1.5); // Center at -5, σ = 1.5
+        const growthPositive = x => gaussian(x, 5, 1.5);  // Center at 5, σ = 1.5
+
+        // Membership functions for output (used in defuzzification)
+        const crisisLow = z => gaussian(z, 0, 0.2);     // Center at 0, σ = 0.2
+        const crisisHigh = z => gaussian(z, 1, 0.2);    // Center at 1, σ = 0.2
+
+        // Compute crisis risk using Mamdani fuzzy inference system
+        function computeCrisisRisk(defaultRisk, growth) {
+            // Firing strengths of rules (using minimum for AND)
+            // Rule 1: High default risk AND Negative growth → High crisis risk
+            const firing1 = Math.min(defaultHigh(defaultRisk), growthNegative(growth));
+            // Rule 2: Low default risk AND Positive growth → Low crisis risk
+            const firing2 = Math.min(defaultLow(defaultRisk), growthPositive(growth));
+
+            // Defuzzification using centroid method (numerical approximation)
+            let sumZMu = 0;  // Sum of z * μ(z)
+            let sumMu = 0;   // Sum of μ(z)
+            const step = 0.01;  // Discretization step for output range [0, 1]
+            for (let z = 0; z <= 1; z += step) {
+                // Implied output membership functions after applying firing strengths
+                const muHigh = Math.min(firing1, crisisHigh(z));
+                const muLow = Math.min(firing2, crisisLow(z));
+                // Aggregate outputs using maximum
+                const mu = Math.max(muHigh, muLow);
+                sumZMu += z * mu;
+                sumMu += mu;
+            }
+            // Compute centroid (defuzzified output)
+            return sumMu > 0 ? sumZMu / sumMu : 0;
+        }
+
+        // Precompute surface plot data for visualization
+        const defaultValues = Array.from({length: 50}, (_, i) => i / 49); // [0, 1] with 50 points
+        const growthValues = Array.from({length: 50}, (_, i) => -5 + (i / 49) * 10); // [-5, 5] with 50 points
+        const crisisGrid = defaultValues.map(d => growthValues.map(g => computeCrisisRisk(d, g)));
+
+        // Plotly surface plot
+        const surfaceData = [{
+            z: crisisGrid,
+            x: growthValues,
+            y: defaultValues,
+            type: 'surface',
+            colorscale: 'Viridis'
+        }];
+        // Initial marker for current slider position
+        const markerData = [{
+            x: [0],           // Initial x (growth)
+            y: [0.5],         // Initial y (default risk)
+            z: [0.5],         // Initial z (crisis risk)
+            mode: 'markers',
+            type: 'scatter3d',
+            marker: { size: 5, color: 'red' }
+        }];
+        Plotly.newPlot('plot', [...surfaceData, ...markerData], {
+            scene: {
+                xaxis: { title: 'Economic Growth (%)' },
+                yaxis: { title: 'Default Risk' },
+                zaxis: { title: 'Crisis Risk' }
+            }
+        });
+
+        // Update function for sliders
+        function updateRisk() {
+            const defaultValue = parseFloat(document.getElementById('default-slider').value);
+            const growthValue = parseFloat(document.getElementById('growth-slider').value);
+            const risk = computeCrisisRisk(defaultValue, growthValue);
+            document.getElementById('result').innerText = `Crisis Risk: ${risk.toFixed(2)}`;
+            // Update marker on surface plot
+            Plotly.restyle('plot', {
+                x: [[growthValue]],
+                y: [[defaultValue]],
+                z: [[risk]]
+            }, 1); // Update the second trace (marker)
+        }
+
+        // Add event listeners to sliders for real-time updates
+        document.getElementById('default-slider').addEventListener('input', updateRisk);
+        document.getElementById('growth-slider').addEventListener('input', updateRisk);
+
+        // Initial computation to set default values
+        updateRisk();
+    </script>
+</body>
+</html>
